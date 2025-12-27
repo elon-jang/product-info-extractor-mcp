@@ -1,129 +1,175 @@
 # Product Info Extractor MCP Server
 
-An advanced MCP server for extracting comprehensive product information from e-commerce websites (UGG, Chanel, Weverse, etc.) with built-in stealth features to bypass bot detection.
+> 🇰🇷 한국어 | 🇺🇸 **[English](README.en.md)**
 
-## ⚡ Key Features
+이커머스 웹사이트에서 상품 정보(가격, 재고, 이미지, 색상별 사이즈 등)를 자동으로 추출하는 MCP 서버입니다.
 
-- **🚀 High Performance:** Keeps browser instances alive for 5-10x faster subsequent requests.
-- **🥷 Stealth Mode:** Uses `playwright-extra` and `puppeteer-extra-plugin-stealth` to bypass basic bot detection.
-- **🔌 MCP Protocol:** Fully supports Model Context Protocol (SSE/HTTP) for seamless LLM integration.
-- **📦 Multi-Platform Docker:** Support for both `amd64` and `arm64` (Apple Silicon & Cloud VMs).
+> **⚠️ 중요:** DataDome 같은 고급 봇 차단 시스템은 자동 접근을 차단할 수 있습니다. 성공률은 대상 사이트와 네트워크 환경에 따라 다릅니다.
 
----
+## 🚀 빠른 시작 (30초)
 
-## 🛠 Prerequisites
+### Docker로 실행 (권장)
 
-- **Node.js:** v18.0.0 or higher (Required for ESM support)
-- **Docker / Podman:** Required for containerized deployment
-- **Git:** Required for cloning the repository
+```bash
+# 저장소 클론
+git clone https://github.com/elon-jang/product-info-extractor-mcp.git
+cd product-info-extractor-mcp
 
----
+# 서버 시작
+docker compose up -d
 
-## 🚀 Quick Start (Local Development)
+# 테스트
+npm install
+node test-mcp-http.js "https://www.ugg.com/women-slippers/cozy-slipper/1117659.html"
+```
 
-### 1. Install Dependencies
+### 로컬 개발 모드
+
 ```bash
 npm install
 npx playwright install chromium
-```
-
-### 2. Run in HTTP/SSE Mode
-```bash
 npm run start:http
 ```
 
 ---
 
-## ☁️ Deployment Guide (VM/Cloud - Rocky Linux/TencentOS)
+## 📋 주요 기능
 
-### 1. Provision & Setup Git
+- **🚀 고성능:** 브라우저 인스턴스 재사용으로 5-10배 빠른 후속 요청
+- **🥷 스텔스 모드:** `playwright-extra` + `puppeteer-extra-plugin-stealth`로 기본 봇 탐지 우회
+- **🔌 MCP 프로토콜:** Claude Desktop과 바로 연동 가능
+- **📦 멀티 플랫폼:** AMD64 + ARM64 (Apple Silicon & 클라우드 VM) 지원
+
+---
+
+## 🐳 Docker 배포 가이드
+
+### 1. Docker 설치
+
 ```bash
-# Install Git
-sudo dnf install -y git
+# Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install -y docker.io docker-compose-plugin
 
-# Clone repository
-git clone https://github.com/elon-jang/product-info-extractor-mcp.git
-cd product-info-extractor-mcp
-```
-
-### 2. Option A: Docker / Podman (Recommended)
-
-#### **Step 1: Install Container Engine**
-```bash
-# For Docker (Official Repo)
+# RHEL/CentOS/Rocky Linux
 sudo dnf install -y yum-utils
 sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
 sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 sudo systemctl start docker && sudo systemctl enable docker
-
-# For Podman (Native RHEL/TOS)
-sudo dnf install -y podman
 ```
 
-#### **Step 2: Run the Extractor**
-If using **Podman** on older OS (Python < 3.8), use `podman run` directly:
+### 2. 서버 실행
+
 ```bash
-# Docker
+# Docker Compose로 실행 (권장)
 docker compose up -d
 
-# Podman (Direct Run - Safest for older OS)
-podman run -d -p 8080:3000 \
+# 또는 docker run으로 실행
+docker run -d -p 8080:3000 \
   -e PORT=3000 -e HOST=0.0.0.0 \
   --name product-info-extractor \
-  docker.io/joomanba/product-info-extractor-mcp:latest
+  joomanba/product-info-extractor-mcp:latest
+```
+
+### 3. 상태 확인
+
+```bash
+# 컨테이너 로그 확인
+docker logs -f product-info-extractor
+
+# Health check
+curl http://localhost:8080/health
 ```
 
 ---
 
-### 3. Option B: Manual Installation (npm)
+## 🧪 테스트
 
-Use this if you cannot use containers. Requires **Node.js v18+**.
-
-```bash
-# 1. Install Node.js v18+ (example using NodeSource)
-# First, completely remove old versions and conflicting npm package
-sudo dnf remove -y nodejs npm
-curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
-sudo dnf install -y nodejs
-
-# 2. Install Playwright dependencies
-sudo npx playwright install-deps
-
-# 3. Setup Project
-npm install
-npx playwright install chromium
-
-# 4. Start Server
-npm run start:http
-```
-
----
-
-## 🧪 Testing the Deployment
-
-Once the server is running at `http://<VM_IP>:8080/sse`:
-
-### Method 1: Node.js Test Client (Full Extraction)
-**Requires Node.js v18+ on the testing machine.**
+### Node.js 테스트 클라이언트
 
 ```bash
-# Install dependencies if not done
 npm install
-
-# Run test (default port 8080)
-node test-mcp-http.js https://www.ugg.com/...
+node test-mcp-http.js "https://www.ugg.com/women-slippers/cozy-slipper/1117659.html"
 ```
 
-### Method 2: Shell Script (Connection Test)
+### Shell 스크립트 (간단한 연결 테스트)
+
 ```bash
 ./test-server.sh http://localhost:8080
 ```
 
 ---
 
-## 🛠 Building the Image (Developers)
+## 🔧 Claude Desktop 연동
 
-To build and push for multiple architectures (AMD64/ARM64):
+`claude_desktop_config.json`에 추가:
+
+```json
+{
+  "mcpServers": {
+    "product-info-extractor": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:8080/sse"]
+    }
+  }
+}
+```
+
+---
+
+## ⚠️ 제한 사항
+
+### 봇 차단 시스템
+
+다음 시스템들은 자동 접근을 차단할 수 있습니다:
+
+- **DataDome** (UGG.com 사용): 성공률이 환경에 따라 변동
+- **Cloudflare Advanced**: 추가 우회 기법 필요
+- **PerimeterX**: 우회 매우 어려움
+
+### 권장 사항
+
+✅ 프로덕션 전 충분한 테스트
+✅ 가능하면 공식 API 사용
+✅ 재시도 로직 및 에러 처리 구현
+✅ 성공률 모니터링
+
+---
+
+## 📚 고급 가이드
+
+### Podman 환경 (RHEL/CentOS)
+
+```bash
+# Podman 설치
+sudo dnf install -y podman
+
+# 실행
+podman run -d -p 8080:3000 \
+  -e PORT=3000 -e HOST=0.0.0.0 \
+  --name product-info-extractor \
+  docker.io/joomanba/product-info-extractor-mcp:latest
+```
+
+### 수동 설치 (Docker 없이)
+
+```bash
+# Node.js v18+ 설치
+curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
+sudo dnf install -y nodejs
+
+# Playwright 의존성
+sudo npx playwright install-deps
+
+# 프로젝트 설정
+npm install
+npx playwright install chromium
+
+# 서버 시작
+npm run start:http
+```
+
+### 이미지 빌드 (개발자용)
 
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 \
@@ -132,17 +178,6 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 
 ---
 
-## 🔧 Claude Desktop Configuration
+## 📄 라이선스
 
-Update your `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "product-info-extractor": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "http://<YOUR_VM_IP>:8080/sse"]
-    }
-  }
-}
-```
+MIT License

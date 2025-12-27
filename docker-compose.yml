@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   product-info-extractor:
     image: joomanba/product-info-extractor-mcp:latest
