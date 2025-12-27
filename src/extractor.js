@@ -180,12 +180,14 @@ class ProductExtractor {
         // Fresh context per attempt for total isolation
         currentContext = await this.browser.newContext({
           ignoreHTTPSErrors: true,
-          viewport: { width: 1920, height: 1080 },
+          viewport: { width: 1440, height: 900 },
           deviceScaleFactor: 2,
+          locale: 'en-US',
           timezoneId: 'America/New_York', // Matches residential IP region
+          colorScheme: 'light',
           userAgent: `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${cleanVersion} Safari/537.36`,
           extraHTTPHeaders: {
-            'sec-ch-ua': `"Not(A:Brand";v="99", "Google Chrome";v="${browserMajorVersion}", "Chromium";v="${browserMajorVersion}"`,
+            'sec-ch-ua': `"Chromium";v="${browserMajorVersion}", "Google Chrome";v="${browserMajorVersion}", "Not=A?Brand";v="99"`,
             'sec-ch-ua-mobile': '?0',
             'sec-ch-ua-platform': '"macOS"',
             'Accept-Language': 'en-US,en;q=0.9',
@@ -211,13 +213,16 @@ class ProductExtractor {
         // Diagnostic: Check current IP if proxy is enabled (DISABLED for stealth in real runs)
         // if (process.env.PROXY_SERVER && extractionAttempts === 0) { ... }
 
-        // Random jitter before navigation
-        await currentPage.waitForTimeout(Math.random() * 3000 + 1000);
+        // Random jitter before navigation to mimic human lead time
+        await currentPage.waitForTimeout(Math.random() * 3000 + 2000);
 
         const response = await currentPage.goto(url, {
-          waitUntil: siteConfig.loadSettings.waitUntil,
+          waitUntil: 'domcontentloaded', // Wait for initial DOM
           timeout: siteConfig.loadSettings.timeout,
         });
+
+        // "Observational" wait - let DataDome/Cloudflare scripts run/resolve
+        await currentPage.waitForTimeout(4000);
 
         const status = response ? response.status() : 'No Response';
         const title = await currentPage.title();
@@ -232,9 +237,23 @@ class ProductExtractor {
           throw new Error(`Cloudflare/Firewall Blocked (Status ${status})`);
         }
 
-        // Human-like interaction: Scroll
-        await currentPage.evaluate(() => window.scrollBy(0, 400));
-        await currentPage.waitForTimeout(1000);
+        // Human-like interaction: Multi-step Scroll (mimic a person reading/scanning)
+        await currentPage.evaluate(() => {
+          return new Promise(resolve => {
+            let totalHeight = 0;
+            const distance = 100;
+            const timer = setInterval(() => {
+              const scrollHeight = document.body.scrollHeight;
+              window.scrollBy(0, distance);
+              totalHeight += distance;
+              if (totalHeight >= 600 || totalHeight >= scrollHeight) {
+                clearInterval(timer);
+                resolve();
+              }
+            }, 150);
+          });
+        });
+        await currentPage.waitForTimeout(1500);
 
         // Wait for a core element (UGG specific or generic)
         if (url.includes('ugg.com')) {
