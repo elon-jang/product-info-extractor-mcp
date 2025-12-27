@@ -149,12 +149,21 @@ class ProductExtractor {
 
     try {
       try {
-        await page.goto(url, {
+        const response = await page.goto(url, {
           waitUntil: siteConfig.loadSettings.waitUntil,
           timeout: siteConfig.loadSettings.timeout,
         });
-      } catch {
-        console.log("⚠️ Page load timeout, continuing...");
+
+        const status = response ? response.status() : 'No Response';
+        const title = await page.title();
+        console.log(`📡 [${status}] Page Loaded: "${title}"`);
+
+        // Check for common blocking indicators
+        if (title.toLowerCase().includes('just a moment') || title.toLowerCase().includes('cloudflare') || title.toLowerCase().includes('access denied')) {
+          console.warn('⚠️  Cloudflare/Bot detection detected in page title!');
+        }
+      } catch (e) {
+        console.log(`⚠️ Page load error: ${e.message}`);
       }
 
       await page.waitForTimeout(siteConfig.loadSettings.waitAfterLoad || 0);
