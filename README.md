@@ -7,6 +7,7 @@ An advanced MCP server for extracting comprehensive product information from e-c
 - **🚀 High Performance:** Keeps browser instances alive for 5-10x faster subsequent requests.
 - **🥷 Stealth Mode:** Uses `playwright-extra` and `puppeteer-extra-plugin-stealth` to bypass Cloudflare and advanced bot detection.
 - **🔌 MCP Protocol:** Fully supports Model Context Protocol (SSE/HTTP) for seamless LLM integration.
+- **🌐 Proxy Support:** Built-in support for residential proxies to bypass site-specific IP blocking.
 - **📦 Multi-Platform Docker:** Support for both `amd64` and `arm64` (Apple Silicon & Cloud VMs).
 
 ---
