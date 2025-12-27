@@ -217,12 +217,26 @@ class ProductExtractor {
         await currentPage.waitForTimeout(Math.random() * 3000 + 2000);
 
         const response = await currentPage.goto(url, {
-          waitUntil: 'domcontentloaded', // Wait for initial DOM
-          timeout: siteConfig.loadSettings.timeout,
+          waitUntil: 'networkidle', // Try to wait for full script execution
+          timeout: 45000,
+        }).catch(async () => {
+          console.log("⚠️ Networkidle timeout, continuing with current state...");
+          return null;
         });
 
         // "Observational" wait - let DataDome/Cloudflare scripts run/resolve
-        await currentPage.waitForTimeout(4000);
+        await currentPage.waitForTimeout(5000);
+
+        // Simulated mouse movement to trigger behavioral scripts
+        try {
+          await currentPage.mouse.move(Math.random() * 500, Math.random() * 500);
+          await currentPage.waitForTimeout(500);
+          await currentPage.mouse.move(Math.random() * 500, Math.random() * 500);
+        } catch (mE) { /* Ignored */ }
+
+        const cookies = await currentContext.cookies();
+        const hasDataDomeCookie = cookies.some(c => c.name.toLowerCase().includes('datadome'));
+        if (hasDataDomeCookie) console.log("🍪 DataDome cookie detected");
 
         const status = response ? response.status() : 'No Response';
         const title = await currentPage.title();
