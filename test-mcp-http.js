@@ -8,7 +8,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 
-const SERVER_URL = 'http://127.0.0.1:3000/sse';
+const SERVER_URL = process.env.MCP_SERVER_URL || 'http://127.0.0.1:8080/sse';
 const TEST_URL = process.argv[2] || 'https://www.ugg.com/women-slippers/cozy-slipper/1117659.html';
 
 console.log(`🧪 Testing MCP Server at: ${SERVER_URL}`);
