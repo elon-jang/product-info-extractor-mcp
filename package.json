@@ -1,0 +1,45 @@
+{
+  "name": "product-info-extractor-mcp",
+  "version": "1.0.0",
+  "description": "MCP Server for extracting comprehensive product information from e-commerce websites with browser instance reuse for optimal performance",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "product-info-extractor-mcp": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "start:http": "node src/server-http.js",
+    "dev": "node --watch src/index.js",
+    "dev:http": "node --watch src/server-http.js",
+    "test": "node test/test.js"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "product-extraction",
+    "e-commerce",
+    "playwright",
+    "web-scraping",
+    "stock-checker",
+    "product-info",
+    "llm-integration"
+  ],
+  "author": "Claude Code",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.1",
+    "express": "^4.22.1",
+    "playwright": "^1.57.0",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "uuid": "^9.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/product-info-extractor-mcp"
+  }
+}

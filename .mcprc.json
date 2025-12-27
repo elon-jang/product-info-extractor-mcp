@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "product-info-extractor": {
+      "command": "node",
+      "args": ["src/index.js"],
+      "env": {}
+    }
+  }
+}

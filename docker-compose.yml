@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  product-info-extractor:
+    image: joomanba/product-info-extractor-mcp:latest
+    container_name: product-info-extractor
+    ports:
+      - "8080:3000"  # 호스트:컨테이너
+    environment:
+      - PORT=3000
+      - HOST=0.0.0.0
+      - NODE_ENV=production
+      - SITES_DIR=/app/sites
+      - CACHE_TTL_MINUTES=30
+    restart: always
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # 볼륨 마운트 (사이트 설정 재사용)
+    volumes:
+      - ./sites:/app/sites:ro
+    # 리소스 제한 (선택)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
