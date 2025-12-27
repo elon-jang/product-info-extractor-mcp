@@ -12,7 +12,7 @@
     "start:http": "node src/server-http.js",
     "dev": "node --watch src/index.js",
     "dev:http": "node --watch src/server-http.js",
-    "test": "node test/test.js"
+    "test": "node test-extraction.js"
   },
   "keywords": [
     "mcp",
@@ -40,6 +40,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/product-info-extractor-mcp"
+    "url": "https://github.com/elon-jang/product-info-extractor-mcp.git"
   }
 }

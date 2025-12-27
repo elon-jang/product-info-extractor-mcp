@@ -31,7 +31,11 @@ class ProductExtractor {
 
     console.log("🚀 Initializing browser instance...");
 
-    this.browser = await chromium.launch({
+    const proxyServer = process.env.PROXY_SERVER;
+    const proxyUsername = process.env.PROXY_USERNAME;
+    const proxyPassword = process.env.PROXY_PASSWORD;
+
+    const launchArgs = {
       headless: true,
       args: [
         "--disable-blink-features=AutomationControlled",
@@ -41,7 +45,20 @@ class ProductExtractor {
         "--disable-features=IsolateOrigins,site-per-process",
         "--disable-setuid-sandbox",
       ],
-    });
+    };
+
+    if (proxyServer) {
+      console.log(`🌐 Using Proxy Server: ${proxyServer}`);
+      launchArgs.proxy = {
+        server: proxyServer,
+      };
+      if (proxyUsername && proxyPassword) {
+        launchArgs.proxy.username = proxyUsername;
+        launchArgs.proxy.password = proxyPassword;
+      }
+    }
+
+    this.browser = await chromium.launch(launchArgs);
 
     this.context = await this.browser.newContext({
       userAgent:
