@@ -170,6 +170,15 @@ class ProductExtractor {
 
     try {
       try {
+        // Diagnostic: Check current IP if proxy is enabled
+        if (process.env.PROXY_SERVER) {
+          const ipCheck = await page.goto('https://httpbin.org/ip', { timeout: 10000 }).catch(() => null);
+          if (ipCheck) {
+            const ipData = await page.evaluate(() => document.body.innerText);
+            console.log(`🌐 Browser IP Identity: ${ipData.trim()}`);
+          }
+        }
+
         const response = await page.goto(url, {
           waitUntil: siteConfig.loadSettings.waitUntil,
           timeout: siteConfig.loadSettings.timeout,
@@ -177,7 +186,12 @@ class ProductExtractor {
 
         const status = response ? response.status() : 'No Response';
         const title = await page.title();
+        const bodySnippet = await page.evaluate(() => document.body.innerText.slice(0, 500));
+
         console.log(`📡 [${status}] Page Loaded: "${title}"`);
+        if (status !== 200) {
+          console.log(`⚠️ Status ${status} body: "${bodySnippet.replace(/\n/g, ' ')}"`);
+        }
 
         // Check for common blocking indicators
         if (title.toLowerCase().includes('just a moment') || title.toLowerCase().includes('cloudflare') || title.toLowerCase().includes('access denied')) {
@@ -185,6 +199,7 @@ class ProductExtractor {
         }
       } catch (e) {
         console.log(`⚠️ Page load error: ${e.message}`);
+        if (e.message.includes('context was destroyed')) throw e; // Let the retry loop handle it
       }
 
       await page.waitForTimeout(siteConfig.loadSettings.waitAfterLoad || 0);
