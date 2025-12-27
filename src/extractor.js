@@ -176,6 +176,12 @@ class ProductExtractor {
           : Promise.resolve({ variants: [], sizes: [], current_color: null }),
       ]);
 
+      // Diagnostic: Log body snippet if name is missing
+      if (!productInfo.name) {
+        const bodySnippet = await page.evaluate(() => document.body.innerText.slice(0, 500));
+        console.log(`⚠️  Extraction empty. Body snippet: "${bodySnippet.replace(/\n/g, ' ')}"`);
+      }
+
       let result = {
         url,
         timestamp: new Date().toISOString(),
