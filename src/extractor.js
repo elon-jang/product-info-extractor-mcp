@@ -31,10 +31,6 @@ class ProductExtractor {
 
     console.log("🚀 Initializing browser instance...");
 
-    const proxyServer = process.env.PROXY_SERVER;
-    const proxyUsername = process.env.PROXY_USERNAME;
-    const proxyPassword = process.env.PROXY_PASSWORD;
-
     const launchArgs = {
       headless: true,
       args: [
@@ -44,44 +40,16 @@ class ProductExtractor {
       ],
     };
 
-    if (proxyServer) {
-      const redactedUser = proxyUsername ? `${proxyUsername.substring(0, 8)}...` : 'not set';
-      console.log(`🌐 Using Proxy Server: ${proxyServer} (User: ${redactedUser})`);
-
-      const proxyConfig = {
-        server: proxyServer,
-      };
-      if (proxyUsername && proxyPassword) {
-        proxyConfig.username = proxyUsername;
-        proxyConfig.password = proxyPassword;
-      }
-
-      launchArgs.proxy = proxyConfig;
-    }
-
     this.browser = await chromium.launch(launchArgs);
     this.browserVersion = await this.browser.version();
 
     const contextOptions = {
-      ignoreHTTPSErrors: true, // Required for many residential proxies that perform SSL inspection
+      ignoreHTTPSErrors: true,
       viewport: { width: 1920, height: 1080 },
-      deviceScaleFactor: 2, // Retina-like scale for Mac
+      deviceScaleFactor: 2,
     };
 
-    // Force proxy at context level as well
-    if (proxyServer) {
-      contextOptions.proxy = {
-        server: proxyServer,
-      };
-      if (proxyUsername && proxyPassword) {
-        contextOptions.proxy.username = proxyUsername;
-        contextOptions.proxy.password = proxyPassword;
-      }
-    }
-
     this.context = await this.browser.newContext(contextOptions);
-
-    // Stealth plugin handles navigator properties, so manual overrides are removed.
 
     this.isInitialized = true;
     console.log(`✅ Browser initialized (Version: ${this.browserVersion})`);
@@ -165,13 +133,6 @@ class ProductExtractor {
 
     const siteConfig = await this.loadSiteConfig(url);
 
-    // Generate a random session ID for this extraction attempt to keep IP persistent across reloads
-    const sessionId = Math.floor(Math.random() * 1000000);
-    const proxyUsername = process.env.PROXY_USERNAME;
-    const persistentProxyUsername = proxyUsername && proxyUsername.includes('customer')
-      ? `${proxyUsername}-session-${sessionId}`
-      : proxyUsername;
-
     let extractionAttempts = 0;
     let finalResult = null;
 
@@ -190,7 +151,7 @@ class ProductExtractor {
           viewport: { width: 1440, height: 900 },
           deviceScaleFactor: 2,
           locale: 'en-US',
-          timezoneId: 'America/New_York', // Matches residential IP region
+          timezoneId: 'America/New_York',
           colorScheme: 'light',
           userAgent: `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${cleanVersion} Safari/537.36`,
           extraHTTPHeaders: {
@@ -208,28 +169,9 @@ class ProductExtractor {
           }
         };
 
-        // Apply session-persistent proxy to the context
-        if (process.env.PROXY_SERVER && persistentProxyUsername) {
-          contextOptions.proxy = {
-            server: process.env.PROXY_SERVER,
-            username: persistentProxyUsername,
-            password: process.env.PROXY_PASSWORD,
-          };
-        }
-
         currentContext = await this.browser.newContext(contextOptions);
 
         currentPage = await currentContext.newPage();
-
-        currentPage.on('requestfailed', request => {
-          const failure = request.failure();
-          if (failure && (failure.errorText.includes('ERR_PROXY') || failure.errorText.includes('ERR_TUNNEL'))) {
-            console.error(`❌ Network/Proxy failure for ${request.url()}: ${failure.errorText}`);
-          }
-        });
-
-        // Diagnostic: Check current IP if proxy is enabled (DISABLED for stealth in real runs)
-        // if (process.env.PROXY_SERVER && extractionAttempts === 0) { ... }
 
         // Random jitter before navigation to mimic human lead time
         await currentPage.waitForTimeout(Math.random() * 3000 + 2000);
@@ -261,29 +203,10 @@ class ProductExtractor {
 
         // Handle blocking (403 or Cloudflare titles)
         if (status === 403 || title.toLowerCase().includes('just a moment') || title.toLowerCase().includes('cloudflare') || title.toLowerCase().includes('access denied')) {
-          // Double-Navigation Strategy: If cookie exists, wait and reload
-          const cookiesAfterWait = await currentContext.cookies();
-          const datadomeCookie = cookiesAfterWait.find(c => c.name.toLowerCase().includes('datadome'));
-
-          if (datadomeCookie) {
-            console.log(`🍪 DataDome cookie detected (Session: ${sessionId}). Attempting reload...`);
-            await currentPage.waitForTimeout(3000); // Small breath
-            const secondResponse = await currentPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => null);
-
-            if (secondResponse) {
-              status = secondResponse.status();
-              title = await currentPage.title();
-              console.log(`📡 [Attempt ${extractionAttempts + 1}-Reload] [${status}] Page Loaded: "${title}"`);
-            }
-          }
-
-          // If still 403 after potential reload, then throw
-          if (status === 403 || title.toLowerCase().includes('just a moment') || title.toLowerCase().includes('cloudflare')) {
-            const htmlCapture = await currentPage.content().then(html => html.slice(0, 1000));
-            console.log(`⚠️ Blocked (Status ${status}). Title: "${title}".`);
-            console.log(`📄 HTML Snippet: "${htmlCapture.replace(/\n/g, ' ')}"`);
-            throw new Error(`Cloudflare/Firewall Blocked (Status ${status})`);
-          }
+          const htmlCapture = await currentPage.content().then(html => html.slice(0, 1000));
+          console.log(`⚠️ Blocked (Status ${status}). Title: "${title}".`);
+          console.log(`📄 HTML Snippet: "${htmlCapture.replace(/\n/g, ' ')}"`);
+          throw new Error(`Cloudflare/Firewall Blocked (Status ${status})`);
         }
 
         // Human-like interaction: Multi-step Scroll (mimic a person reading/scanning)

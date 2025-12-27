@@ -5,9 +5,8 @@ An advanced MCP server for extracting comprehensive product information from e-c
 ## ⚡ Key Features
 
 - **🚀 High Performance:** Keeps browser instances alive for 5-10x faster subsequent requests.
-- **🥷 Stealth Mode:** Uses `playwright-extra` and `puppeteer-extra-plugin-stealth` to bypass Cloudflare and advanced bot detection.
+- **🥷 Stealth Mode:** Uses `playwright-extra` and `puppeteer-extra-plugin-stealth` to bypass basic bot detection.
 - **🔌 MCP Protocol:** Fully supports Model Context Protocol (SSE/HTTP) for seamless LLM integration.
-- **🌐 Proxy Support:** Built-in support for residential proxies to bypass site-specific IP blocking.
 - **📦 Multi-Platform Docker:** Support for both `amd64` and `arm64` (Apple Silicon & Cloud VMs).
 
 ---
@@ -97,34 +96,6 @@ npx playwright install chromium
 # 4. Start Server
 npm run start:http
 ```
-
----
-
-## 🌐 Proxy Configuration
-
-If you're blocked by specific sites (like UGG.com) due to cloud VM IP range, use a proxy:
-
-### 1. Using Environment Variables
-You can pass proxy settings via environment variables when running either with Node or Docker/Podman.
-
-**Variables:**
-- `PROXY_SERVER`: The proxy server URL (e.g., `http://proxy.host:port`)
-- `PROXY_USERNAME`: (Optional) Proxy authentication username
-- `PROXY_PASSWORD`: (Optional) Proxy authentication password
-
-### 2. Example with Podman/Docker
-```bash
-podman run -d -p 8080:3000 \
-  -e PORT=3000 -e HOST=0.0.0.0 \
-  -e PROXY_SERVER="http://your-proxy:8080" \
-  -e PROXY_USERNAME="user" \
-  -e PROXY_PASSWORD="pass" \
-  --name product-info-extractor \
-  docker.io/joomanba/product-info-extractor-mcp:latest
-```
-
-> [!NOTE]
-> If these variables are not set, the extractor will use the server's local IP as usual.
 
 ---
 
