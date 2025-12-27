@@ -100,6 +100,34 @@ npm run start:http
 
 ---
 
+## 🌐 Proxy Configuration
+
+If you're blocked by specific sites (like UGG.com) due to cloud VM IP range, use a proxy:
+
+### 1. Using Environment Variables
+You can pass proxy settings via environment variables when running either with Node or Docker/Podman.
+
+**Variables:**
+- `PROXY_SERVER`: The proxy server URL (e.g., `http://proxy.host:port`)
+- `PROXY_USERNAME`: (Optional) Proxy authentication username
+- `PROXY_PASSWORD`: (Optional) Proxy authentication password
+
+### 2. Example with Podman/Docker
+```bash
+podman run -d -p 8080:3000 \
+  -e PORT=3000 -e HOST=0.0.0.0 \
+  -e PROXY_SERVER="http://your-proxy:8080" \
+  -e PROXY_USERNAME="user" \
+  -e PROXY_PASSWORD="pass" \
+  --name product-info-extractor \
+  docker.io/joomanba/product-info-extractor-mcp:latest
+```
+
+> [!NOTE]
+> If these variables are not set, the extractor will use the server's local IP as usual.
+
+---
+
 ## 🧪 Testing the Deployment
 
 Once the server is running at `http://<VM_IP>:8080/sse`:
