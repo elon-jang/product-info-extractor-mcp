@@ -165,6 +165,13 @@ class ProductExtractor {
 
     const siteConfig = await this.loadSiteConfig(url);
 
+    // Generate a random session ID for this extraction attempt to keep IP persistent across reloads
+    const sessionId = Math.floor(Math.random() * 1000000);
+    const proxyUsername = process.env.PROXY_USERNAME;
+    const persistentProxyUsername = proxyUsername && proxyUsername.includes('customer')
+      ? `${proxyUsername}-session-${sessionId}`
+      : proxyUsername;
+
     let extractionAttempts = 0;
     let finalResult = null;
 
@@ -178,7 +185,7 @@ class ProductExtractor {
         const cleanVersion = (this.browserVersion || "133").split('/').pop();
 
         // Fresh context per attempt for total isolation
-        currentContext = await this.browser.newContext({
+        const contextOptions = {
           ignoreHTTPSErrors: true,
           viewport: { width: 1440, height: 900 },
           deviceScaleFactor: 2,
@@ -199,7 +206,18 @@ class ProductExtractor {
             'Upgrade-Insecure-Requests': '1',
             'referer': 'https://www.google.com/',
           }
-        });
+        };
+
+        // Apply session-persistent proxy to the context
+        if (process.env.PROXY_SERVER && persistentProxyUsername) {
+          contextOptions.proxy = {
+            server: process.env.PROXY_SERVER,
+            username: persistentProxyUsername,
+            password: process.env.PROXY_PASSWORD,
+          };
+        }
+
+        currentContext = await this.browser.newContext(contextOptions);
 
         currentPage = await currentContext.newPage();
 
@@ -229,26 +247,43 @@ class ProductExtractor {
 
         // Simulated mouse movement to trigger behavioral scripts
         try {
-          await currentPage.mouse.move(Math.random() * 500, Math.random() * 500);
-          await currentPage.waitForTimeout(500);
-          await currentPage.mouse.move(Math.random() * 500, Math.random() * 500);
+          await this.moveMouseSmoothly(currentPage);
         } catch (mE) { /* Ignored */ }
 
         const cookies = await currentContext.cookies();
         const hasDataDomeCookie = cookies.some(c => c.name.toLowerCase().includes('datadome'));
         if (hasDataDomeCookie) console.log("🍪 DataDome cookie detected");
 
-        const status = response ? response.status() : 'No Response';
-        const title = await currentPage.title();
+        let status = response ? response.status() : 'No Response';
+        let title = await currentPage.title();
 
         console.log(`📡 [Attempt ${extractionAttempts + 1}] [${status}] Page Loaded: "${title}"`);
 
         // Handle blocking (403 or Cloudflare titles)
         if (status === 403 || title.toLowerCase().includes('just a moment') || title.toLowerCase().includes('cloudflare') || title.toLowerCase().includes('access denied')) {
-          const htmlCapture = await currentPage.content().then(html => html.slice(0, 1000));
-          console.log(`⚠️ Blocked (Status ${status}). Title: "${title}".`);
-          console.log(`📄 HTML Snippet: "${htmlCapture.replace(/\n/g, ' ')}"`);
-          throw new Error(`Cloudflare/Firewall Blocked (Status ${status})`);
+          // Double-Navigation Strategy: If cookie exists, wait and reload
+          const cookiesAfterWait = await currentContext.cookies();
+          const datadomeCookie = cookiesAfterWait.find(c => c.name.toLowerCase().includes('datadome'));
+
+          if (datadomeCookie) {
+            console.log(`🍪 DataDome cookie detected (Session: ${sessionId}). Attempting reload...`);
+            await currentPage.waitForTimeout(3000); // Small breath
+            const secondResponse = await currentPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => null);
+
+            if (secondResponse) {
+              status = secondResponse.status();
+              title = await currentPage.title();
+              console.log(`📡 [Attempt ${extractionAttempts + 1}-Reload] [${status}] Page Loaded: "${title}"`);
+            }
+          }
+
+          // If still 403 after potential reload, then throw
+          if (status === 403 || title.toLowerCase().includes('just a moment') || title.toLowerCase().includes('cloudflare')) {
+            const htmlCapture = await currentPage.content().then(html => html.slice(0, 1000));
+            console.log(`⚠️ Blocked (Status ${status}). Title: "${title}".`);
+            console.log(`📄 HTML Snippet: "${htmlCapture.replace(/\n/g, ' ')}"`);
+            throw new Error(`Cloudflare/Firewall Blocked (Status ${status})`);
+          }
         }
 
         // Human-like interaction: Multi-step Scroll (mimic a person reading/scanning)
@@ -589,6 +624,24 @@ class ProductExtractor {
   /**
    * 브라우저 종료
    */
+  /**
+   * Smooth mouse movement to mimic human behavior
+   */
+  async moveMouseSmoothly(page) {
+    const steps = 15;
+    const startX = Math.random() * 100;
+    const startY = Math.random() * 100;
+    const endX = Math.random() * 800 + 100;
+    const endY = Math.random() * 600 + 100;
+
+    for (let i = 0; i <= steps; i++) {
+      const x = startX + (endX - startX) * (i / steps);
+      const y = startY + (endY - startY) * (i / steps);
+      await page.mouse.move(x, y).catch(() => null);
+      await page.waitForTimeout(Math.random() * 50 + 20);
+    }
+  }
+
   async close() {
     if (this.browser) {
       console.log("🔌 Closing browser...");
