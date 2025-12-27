@@ -182,6 +182,7 @@ class ProductExtractor {
           ignoreHTTPSErrors: true,
           viewport: { width: 1920, height: 1080 },
           deviceScaleFactor: 2,
+          timezoneId: 'America/New_York', // Matches residential IP region
           userAgent: `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${cleanVersion} Safari/537.36`,
           extraHTTPHeaders: {
             'sec-ch-ua': `"Not(A:Brand";v="99", "Google Chrome";v="${browserMajorVersion}", "Chromium";v="${browserMajorVersion}"`,
@@ -189,6 +190,12 @@ class ProductExtractor {
             'sec-ch-ua-platform': '"macOS"',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1',
+            'referer': 'https://www.google.com/',
           }
         });
 
@@ -201,21 +208,11 @@ class ProductExtractor {
           }
         });
 
-        // Diagnostic: Check current IP if proxy is enabled
-        if (process.env.PROXY_SERVER) {
-          try {
-            const ipCheck = await currentPage.goto('https://httpbin.org/ip', { timeout: 10000 });
-            if (ipCheck) {
-              const ipData = await currentPage.evaluate(() => document.body.innerText);
-              console.log(`🌐 [Attempt ${extractionAttempts + 1}] Browser IP Identity: ${ipData.trim()}`);
-            }
-          } catch (ipError) {
-            console.warn(`⚠️ IP check failed: ${ipError.message}`);
-          }
-        }
+        // Diagnostic: Check current IP if proxy is enabled (DISABLED for stealth in real runs)
+        // if (process.env.PROXY_SERVER && extractionAttempts === 0) { ... }
 
         // Random jitter before navigation
-        await currentPage.waitForTimeout(Math.random() * 2000 + 500);
+        await currentPage.waitForTimeout(Math.random() * 3000 + 1000);
 
         const response = await currentPage.goto(url, {
           waitUntil: siteConfig.loadSettings.waitUntil,
