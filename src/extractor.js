@@ -162,29 +162,40 @@ class ProductExtractor {
     }
 
     const siteConfig = await this.loadSiteConfig(url);
-    const page = await this.context.newPage();
 
-    // Catch network/proxy failures
-    page.on('requestfailed', request => {
-      const failure = request.failure();
-      if (failure && (failure.errorText.includes('ERR_PROXY') || failure.errorText.includes('ERR_TUNNEL'))) {
-        console.error(`❌ Network/Proxy failure for ${request.url()}: ${failure.errorText}`);
-      }
-    });
+    let extractionAttempts = 0;
+    let finalResult = null;
 
-    try {
-      let extractionAttempts = 0;
+    while (extractionAttempts < 3) {
+      let currentContext = null;
+      let currentPage = null;
       let images, productInfo, customData;
 
-      while (extractionAttempts < 3) {
+      try {
+        // Fresh context per attempt for total isolation
+        currentContext = await this.browser.newContext({
+          ignoreHTTPSErrors: !!process.env.PROXY_SERVER,
+          viewport: { width: 1920, height: 1080 },
+          userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+        });
+
+        currentPage = await currentContext.newPage();
+
+        currentPage.on('requestfailed', request => {
+          const failure = request.failure();
+          if (failure && (failure.errorText.includes('ERR_PROXY') || failure.errorText.includes('ERR_TUNNEL'))) {
+            console.error(`❌ Network/Proxy failure for ${request.url()}: ${failure.errorText}`);
+          }
+        });
+
         try {
           // Diagnostic: Check current IP if proxy is enabled
-          if (process.env.PROXY_SERVER && extractionAttempts === 0) {
+          if (process.env.PROXY_SERVER) {
             try {
-              const ipCheck = await page.goto('https://httpbin.org/ip', { timeout: 15000 });
+              const ipCheck = await currentPage.goto('https://httpbin.org/ip', { timeout: 10000 });
               if (ipCheck) {
-                const ipData = await page.evaluate(() => document.body.innerText);
-                console.log(`🌐 Browser IP Identity: ${ipData.trim()}`);
+                const ipData = await currentPage.evaluate(() => document.body.innerText);
+                console.log(`🌐 [Attempt ${extractionAttempts + 1}] Browser IP Identity: ${ipData.trim()}`);
               }
             } catch (ipError) {
               console.warn(`⚠️ IP check failed: ${ipError.message}`);
@@ -192,44 +203,78 @@ class ProductExtractor {
           }
 
           // Random jitter before navigation
-          await page.waitForTimeout(Math.random() * 2000 + 1000);
+          await currentPage.waitForTimeout(Math.random() * 2000 + 500);
 
-          const response = await page.goto(url, {
+          const response = await currentPage.goto(url, {
             waitUntil: siteConfig.loadSettings.waitUntil,
             timeout: siteConfig.loadSettings.timeout,
           });
 
           const status = response ? response.status() : 'No Response';
-          const title = await page.title();
+          const title = await currentPage.title();
 
-          console.log(`📡 [${status}] Page Loaded: "${title}"`);
+          console.log(`📡 [Attempt ${extractionAttempts + 1}] [${status}] Page Loaded: "${title}"`);
 
-          // Handle blocking
+          // Handle blocking (403 or Cloudflare titles)
           if (status === 403 || title.toLowerCase().includes('just a moment') || title.toLowerCase().includes('cloudflare') || title.toLowerCase().includes('access denied')) {
-            const bodyPeek = await page.evaluate(() => document.body.innerText.slice(0, 200));
-            console.log(`⚠️ Blocked (Status ${status}). Title: "${title}". Body snippet: "${bodyPeek.replace(/\n/g, ' ')}"`);
+            const htmlCapture = await currentPage.content().then(html => html.slice(0, 1000));
+            console.log(`⚠️ Blocked (Status ${status}). Title: "${title}".`);
+            console.log(`📄 HTML Snippet: "${htmlCapture.replace(/\n/g, ' ')}"`);
             throw new Error(`Cloudflare/Firewall Blocked (Status ${status})`);
           }
 
           // Human-like interaction: Scroll
-          await page.evaluate(() => window.scrollBy(0, 300));
-          await page.waitForTimeout(500);
+          await currentPage.evaluate(() => window.scrollBy(0, 400));
+          await currentPage.waitForTimeout(1000);
 
           // Wait for a core element (UGG specific or generic)
           if (url.includes('ugg.com')) {
-            await page.waitForSelector('h1, .product-detail', { timeout: 10000 }).catch(() => null);
+            await currentPage.waitForSelector('h1, .product-detail', { timeout: 10000 }).catch(() => null);
           }
 
           [images, productInfo, customData] = await Promise.all([
-            this.extractImages(page, siteConfig),
-            this.extractProductInfo(page, siteConfig),
+            this.extractImages(currentPage, siteConfig),
+            this.extractProductInfo(currentPage, siteConfig),
             typeof siteConfig.customLogic === "function"
-              ? siteConfig.customLogic(page)
+              ? siteConfig.customLogic(currentPage)
               : Promise.resolve({ variants: [], sizes: [], current_color: null }),
           ]);
 
           if (!productInfo.name && extractionAttempts < 2) {
             throw new Error('Extraction failed (empty content)');
+          }
+
+          finalResult = {
+            url,
+            timestamp: new Date().toISOString(),
+            site: siteConfig.name,
+            product: {
+              ...productInfo,
+              variants: customData.variants,
+              sizes: customData.sizes,
+              current_color: customData.current_color,
+              ...Object.fromEntries(
+                Object.entries(customData).filter(
+                  ([k]) => !["variants", "sizes", "current_color"].includes(k)
+                )
+              ),
+            },
+            images: {
+              main_product_image: images.main_product_image,
+              total_count: images.total_images_count,
+              grouped: images.grouped,
+              high_resolution_recommended: images.high_resolution_recommended,
+              all_images: images.all_images,
+            },
+          };
+
+          if (typeof siteConfig.postExtractionHook === "function") {
+            try {
+              console.log(`🛠️ Running post-extraction hook for ${new URL(url).hostname}`);
+              finalResult = await siteConfig.postExtractionHook(currentPage, finalResult, url);
+            } catch (postError) {
+              console.error("❌ Error in post-extraction hook:", postError.message);
+            }
           }
 
           break; // Success
@@ -239,313 +284,278 @@ class ProductExtractor {
 
           if (extractionAttempts < 3) {
             const waitTime = extractionAttempts * 5000;
-            console.log(`   Waiting ${waitTime}ms and retrying...`);
-            await page.waitForTimeout(waitTime);
+            console.log(`   Waiting ${waitTime}ms and retrying with fresh context...`);
+            await new Promise(r => setTimeout(r, waitTime));
           } else {
             throw e;
           }
+        } finally {
+          if (currentPage) await currentPage.close().catch(() => null);
+          if (currentContext) await currentContext.close().catch(() => null);
         }
       }
 
-      // Diagnostic: Log body snippet if name is missing
-      if (!productInfo.name) {
-        const bodySnippet = await page.evaluate(() => document.body.innerText.slice(0, 500));
-        console.log(`⚠️  Extraction empty. Body snippet: "${bodySnippet.replace(/\n/g, ' ')}"`);
+    // Diagnostic: Log body snippet if name is still missing
+    if (finalResult && !finalResult.product.name) {
+        console.log(`⚠️ Final extraction empty for URL: ${url}`);
       }
 
-      let result = {
-        url,
-        timestamp: new Date().toISOString(),
-        site: siteConfig.name,
-        product: {
-          ...productInfo,
-          variants: customData.variants,
-          sizes: customData.sizes,
-          current_color: customData.current_color,
-          ...Object.fromEntries(
-            Object.entries(customData).filter(
-              ([k]) => !["variants", "sizes", "current_color"].includes(k)
-            )
-          ),
-        },
-        images: {
-          main_product_image: images.main_product_image,
-          total_count: images.total_images_count,
-          grouped: images.grouped,
-          high_resolution_recommended: images.high_resolution_recommended,
-          all_images: images.all_images,
-        },
-      };
-
-      // 3. Execute site-specific post-processing hook if it exists
-      if (typeof siteConfig.postExtractionHook === "function") {
-        try {
-          console.log(`🛠️ Running post-extraction hook for ${new URL(url).hostname}`);
-          result = await siteConfig.postExtractionHook(page, result, url);
-        } catch (e) {
-          console.error("❌ Error in post-extraction hook:", e.message);
-        }
-      }
-
-      // 4. Store in Cache
-      const finalResult = compact ? this.getCompactResult(result) : result;
+      // 4. Store in Cache and return
+      const processedResult = compact ? this.getCompactResult(finalResult) : finalResult;
       this.cache.set(cacheKey, {
-        data: finalResult,
+        data: processedResult,
         timestamp: Date.now(),
       });
 
-      return finalResult;
-    } finally {
-      if (page) await page.close();
-    }
-  }
-
-  /**
-   * Compact 결과
-   */
-  getCompactResult(full) {
-    const compact = {
-      product: {
-        name: full.product.name,
-        price: full.product.price,
-        in_stock: full.product.in_stock,
-      },
-      image_url: full.images.main_product_image,
-    };
-
-    let sizes = full.product.sizes;
-
-    if (
-      (!sizes || sizes.length === 0) &&
-      full.product.dimensions?.includes("In Stock")
-    ) {
-      sizes = this.parseDimensionsStock(full.product.dimensions);
+      return processedResult;
     }
 
-    if (full.product.variants?.length) {
-      compact.product.variants = full.product.variants.map((v) => {
-        const variantSizes = v.sizes || sizes || [];
-        return {
-          color: v.color,
-          color_code: v.color_code,
-          image_url: v.image_url,
-          sizes: variantSizes.map((s) => ({
-            size: s.size,
-            in_stock: s.available || s.in_stock,
-          })),
-        };
-      });
-    } else if (sizes?.length) {
-      compact.product.sizes = sizes.map((s) => ({
-        size: s.size,
-        in_stock: s.available || s.in_stock,
-      }));
-    }
+    /**
+     * Compact 결과
+     */
+    getCompactResult(full) {
+      const compact = {
+        product: {
+          name: full.product.name,
+          price: full.product.price,
+          in_stock: full.product.in_stock,
+        },
+        image_url: full.images.main_product_image,
+      };
 
-    return compact;
-  }
+      let sizes = full.product.sizes;
 
-  /**
-   * Dimensions → 재고 파싱
-   */
-  parseDimensionsStock(text) {
-    const sizes = [];
-    const lines = text
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
-
-    for (let i = 0; i < lines.length; i++) {
-      if (/^\d+(\.\d+)?$/.test(lines[i])) {
-        const inStock = lines[i + 1] === "In Stock";
-        sizes.push({
-          size: lines[i],
-          available: inStock,
-          stock_text: inStock ? "In Stock" : "",
-        });
-        if (inStock) i++;
+      if (
+        (!sizes || sizes.length === 0) &&
+        full.product.dimensions?.includes("In Stock")
+      ) {
+        sizes = this.parseDimensionsStock(full.product.dimensions);
       }
+
+      if (full.product.variants?.length) {
+        compact.product.variants = full.product.variants.map((v) => {
+          const variantSizes = v.sizes || sizes || [];
+          return {
+            color: v.color,
+            color_code: v.color_code,
+            image_url: v.image_url,
+            sizes: variantSizes.map((s) => ({
+              size: s.size,
+              in_stock: s.available || s.in_stock,
+            })),
+          };
+        });
+      } else if (sizes?.length) {
+        compact.product.sizes = sizes.map((s) => ({
+          size: s.size,
+          in_stock: s.available || s.in_stock,
+        }));
+      }
+
+      return compact;
     }
 
-    return sizes;
-  }
+    /**
+     * Dimensions → 재고 파싱
+     */
+    parseDimensionsStock(text) {
+      const sizes = [];
+      const lines = text
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean);
+
+      for (let i = 0; i < lines.length; i++) {
+        if (/^\d+(\.\d+)?$/.test(lines[i])) {
+          const inStock = lines[i + 1] === "In Stock";
+          sizes.push({
+            size: lines[i],
+            available: inStock,
+            stock_text: inStock ? "In Stock" : "",
+          });
+          if (inStock) i++;
+        }
+      }
+
+      return sizes;
+    }
 
   /**
    * 이미지 추출
    */
   async extractImages(page, siteConfig) {
-    const imageData = await page.evaluate(() => {
-      const images = [];
+      const imageData = await page.evaluate(() => {
+        const images = [];
 
-      document.querySelectorAll("img").forEach((img) => {
-        const src = img.src || img.dataset.src || img.dataset.originalSrc;
-        if (src?.startsWith("http")) {
-          images.push({
-            url: src,
-            alt: img.alt || "",
-            width: img.naturalWidth || 0,
-            height: img.naturalHeight || 0,
-          });
-        }
+        document.querySelectorAll("img").forEach((img) => {
+          const src = img.src || img.dataset.src || img.dataset.originalSrc;
+          if (src?.startsWith("http")) {
+            images.push({
+              url: src,
+              alt: img.alt || "",
+              width: img.naturalWidth || 0,
+              height: img.naturalHeight || 0,
+            });
+          }
+        });
+
+        const og = document.querySelector('meta[property="og:image"]')?.content;
+        if (og) images.push({ url: og, alt: "og:image", width: 0, height: 0 });
+
+        return images;
       });
 
-      const og = document.querySelector('meta[property="og:image"]')?.content;
-      if (og) images.push({ url: og, alt: "og:image", width: 0, height: 0 });
+      const productKeywords = [
+        "product",
+        "item",
+        "main",
+        "hero",
+        "zoom",
+        "large",
+        "detail",
+        "gallery",
+        "model",
+        "packshot",
+        "thumbnail",
+        "swatch",
+      ];
+      const excludeKeywords = [
+        "logo",
+        "icon",
+        "badge",
+        "banner",
+        "advertisement",
+        "sprite",
+        "button",
+        "arrow",
+        "star",
+        "rating",
+        "social",
+        "payment",
+        "footer",
+        "noimage",
+        "placeholder",
+        "empty",
+        "stylitics",
+      ];
 
-      return images;
-    });
+      const filtered = imageData.filter((img) => {
+        const u = img.url.toLowerCase();
+        const a = img.alt.toLowerCase();
+        if (excludeKeywords.some((k) => u.includes(k) || a.includes(k)))
+          return false;
+        return productKeywords.some((k) => u.includes(k) || a.includes(k));
+      });
 
-    const productKeywords = [
-      "product",
-      "item",
-      "main",
-      "hero",
-      "zoom",
-      "large",
-      "detail",
-      "gallery",
-      "model",
-      "packshot",
-      "thumbnail",
-      "swatch",
-    ];
-    const excludeKeywords = [
-      "logo",
-      "icon",
-      "badge",
-      "banner",
-      "advertisement",
-      "sprite",
-      "button",
-      "arrow",
-      "star",
-      "rating",
-      "social",
-      "payment",
-      "footer",
-      "noimage",
-      "placeholder",
-      "empty",
-      "stylitics",
-    ];
+      const sorted = [...filtered].sort(
+        (a, b) => b.width * b.height - a.width * a.height
+      );
 
-    const filtered = imageData.filter((img) => {
-      const u = img.url.toLowerCase();
-      const a = img.alt.toLowerCase();
-      if (excludeKeywords.some((k) => u.includes(k) || a.includes(k)))
-        return false;
-      return productKeywords.some((k) => u.includes(k) || a.includes(k));
-    });
-
-    const sorted = [...filtered].sort(
-      (a, b) => b.width * b.height - a.width * a.height
-    );
-
-    return {
-      main_product_image:
-        sorted[0]?.url || filtered[0]?.url || imageData[0]?.url || "",
-      total_images_count: filtered.length,
-      high_resolution_recommended: sorted.slice(0, 3).map((i) => i.url),
-      grouped: { product: filtered.map((i) => i.url) },
-      all_images: imageData.map((i) => i.url),
-    };
-  }
+      return {
+        main_product_image:
+          sorted[0]?.url || filtered[0]?.url || imageData[0]?.url || "",
+        total_images_count: filtered.length,
+        high_resolution_recommended: sorted.slice(0, 3).map((i) => i.url),
+        grouped: { product: filtered.map((i) => i.url) },
+        all_images: imageData.map((i) => i.url),
+      };
+    }
 
   /**
    * 상품 정보 추출
    */
   async extractProductInfo(page, siteConfig) {
-    return page.evaluate((selectors) => {
-      if (!selectors) {
-        console.error('selectors is undefined in page.evaluate');
-        return {};
-      }
-      const info = {};
-      const ensureArray = (val) => Array.isArray(val) ? val : (val ? [val] : []);
-
-      for (const s of ensureArray(selectors.name)) {
-        const el = document.querySelector(s);
-        if (el) {
-          info.name = el.textContent?.trim();
-          break;
+      return page.evaluate((selectors) => {
+        if (!selectors) {
+          console.error('selectors is undefined in page.evaluate');
+          return {};
         }
-      }
+        const info = {};
+        const ensureArray = (val) => Array.isArray(val) ? val : (val ? [val] : []);
 
-      for (const s of ensureArray(selectors.price)) {
-        const el = document.querySelector(s);
-        if (el) {
-          info.price = el.textContent?.trim();
-          break;
-        }
-      }
-
-      let stock = "";
-      // Check both 'stock' and 'stock_text' for backward/new adapter compatibility
-      const stockSelectors = ensureArray(selectors.stock || selectors.stock_text);
-      for (const s of stockSelectors) {
-        const el = document.querySelector(s);
-        if (el) {
-          stock = el.textContent?.trim();
-          break;
-        }
-      }
-
-      info.stock_text = stock;
-      const lowerStock = stock.toLowerCase();
-
-      // Robust stock detection logic
-      const negativeKeywords = ["unavailable", "sold out", "out of stock", "품절", "일시 품절"];
-      const positiveKeywords = ["in stock", "available", "add to bag", "add to cart", "장바구니"];
-
-      let isAvailable = false;
-
-      // 1. Check for negative keywords first
-      const hasNegative = negativeKeywords.some(k => lowerStock.includes(k));
-
-      if (hasNegative) {
-        isAvailable = false;
-      } else {
-        // 2. Check for positive keywords, ensuring 'available' is not part of 'unavailable'
-        isAvailable = positiveKeywords.some(k => {
-          if (k === "available") {
-            // Check if 'available' is preceded by 'un'
-            return lowerStock.includes(k) && !lowerStock.includes("unavailable");
+        for (const s of ensureArray(selectors.name)) {
+          const el = document.querySelector(s);
+          if (el) {
+            info.name = el.textContent?.trim();
+            break;
           }
-          return lowerStock.includes(k);
-        });
-      }
-
-      info.in_stock = isAvailable;
-
-      // Price cleanup (remove redundant newlines and whitespace)
-      if (info.price) {
-        info.price = info.price.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
-      }
-
-      for (const s of ensureArray(selectors.description)) {
-        const el = document.querySelector(s);
-        if (el) {
-          info.description = el.textContent?.trim();
-          break;
         }
-      }
 
-      return info;
-    }, siteConfig.selectors);
-  }
+        for (const s of ensureArray(selectors.price)) {
+          const el = document.querySelector(s);
+          if (el) {
+            info.price = el.textContent?.trim();
+            break;
+          }
+        }
+
+        let stock = "";
+        // Check both 'stock' and 'stock_text' for backward/new adapter compatibility
+        const stockSelectors = ensureArray(selectors.stock || selectors.stock_text);
+        for (const s of stockSelectors) {
+          const el = document.querySelector(s);
+          if (el) {
+            stock = el.textContent?.trim();
+            break;
+          }
+        }
+
+        info.stock_text = stock;
+        const lowerStock = stock.toLowerCase();
+
+        // Robust stock detection logic
+        const negativeKeywords = ["unavailable", "sold out", "out of stock", "품절", "일시 품절"];
+        const positiveKeywords = ["in stock", "available", "add to bag", "add to cart", "장바구니"];
+
+        let isAvailable = false;
+
+        // 1. Check for negative keywords first
+        const hasNegative = negativeKeywords.some(k => lowerStock.includes(k));
+
+        if (hasNegative) {
+          isAvailable = false;
+        } else {
+          // 2. Check for positive keywords, ensuring 'available' is not part of 'unavailable'
+          isAvailable = positiveKeywords.some(k => {
+            if (k === "available") {
+              // Check if 'available' is preceded by 'un'
+              return lowerStock.includes(k) && !lowerStock.includes("unavailable");
+            }
+            return lowerStock.includes(k);
+          });
+        }
+
+        info.in_stock = isAvailable;
+
+        // Price cleanup (remove redundant newlines and whitespace)
+        if (info.price) {
+          info.price = info.price.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
+        }
+
+        for (const s of ensureArray(selectors.description)) {
+          const el = document.querySelector(s);
+          if (el) {
+            info.description = el.textContent?.trim();
+            break;
+          }
+        }
+
+        return info;
+      }, siteConfig.selectors);
+    }
 
   /**
    * 브라우저 종료
    */
   async close() {
-    if (this.browser) {
-      console.log("🔌 Closing browser...");
-      await this.browser.close();
-      this.browser = null;
-      this.context = null;
-      this.isInitialized = false;
+      if (this.browser) {
+        console.log("🔌 Closing browser...");
+        await this.browser.close();
+        this.browser = null;
+        this.context = null;
+        this.isInitialized = false;
+      }
     }
   }
-}
 
 export default ProductExtractor;
