@@ -61,6 +61,7 @@ class ProductExtractor {
     this.browser = await chromium.launch(launchArgs);
 
     this.context = await this.browser.newContext({
+      ignoreHTTPSErrors: !!proxyServer, // Important for Proxies like Bright Data
       userAgent:
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
       viewport: { width: 1920, height: 1080 },
