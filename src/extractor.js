@@ -62,23 +62,8 @@ class ProductExtractor {
 
     this.context = await this.browser.newContext({
       ignoreHTTPSErrors: !!proxyServer, // Important for Proxies like Bright Data
-      userAgent:
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
       viewport: { width: 1920, height: 1080 },
       locale: "en-US",
-      extraHTTPHeaders: {
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-        'Sec-Ch-Ua-Mobile': '?0',
-        'Sec-Ch-Ua-Platform': '"macOS"',
-        'Upgrade-Insecure-Requests': '1',
-      },
       permissions: ['geolocation'],
       geolocation: { latitude: 37.7749, longitude: -122.4194 }, // San Francisco
     });
@@ -169,46 +154,47 @@ class ProductExtractor {
     const page = await this.context.newPage();
 
     try {
-      try {
-        // Diagnostic: Check current IP if proxy is enabled
-        if (process.env.PROXY_SERVER) {
-          const ipCheck = await page.goto('https://httpbin.org/ip', { timeout: 10000 }).catch(() => null);
-          if (ipCheck) {
-            const ipData = await page.evaluate(() => document.body.innerText);
-            console.log(`🌐 Browser IP Identity: ${ipData.trim()}`);
-          }
-        }
-
-        const response = await page.goto(url, {
-          waitUntil: siteConfig.loadSettings.waitUntil,
-          timeout: siteConfig.loadSettings.timeout,
-        });
-
-        const status = response ? response.status() : 'No Response';
-        const title = await page.title();
-        const bodySnippet = await page.evaluate(() => document.body.innerText.slice(0, 500));
-
-        console.log(`📡 [${status}] Page Loaded: "${title}"`);
-        if (status !== 200) {
-          console.log(`⚠️ Status ${status} body: "${bodySnippet.replace(/\n/g, ' ')}"`);
-        }
-
-        // Check for common blocking indicators
-        if (title.toLowerCase().includes('just a moment') || title.toLowerCase().includes('cloudflare') || title.toLowerCase().includes('access denied')) {
-          console.warn('⚠️  Cloudflare/Bot detection detected in page title!');
-        }
-      } catch (e) {
-        console.log(`⚠️ Page load error: ${e.message}`);
-        if (e.message.includes('context was destroyed')) throw e; // Let the retry loop handle it
-      }
-
-      await page.waitForTimeout(siteConfig.loadSettings.waitAfterLoad || 0);
-
       let extractionAttempts = 0;
       let images, productInfo, customData;
 
       while (extractionAttempts < 3) {
         try {
+          // Diagnostic: Check current IP if proxy is enabled
+          if (process.env.PROXY_SERVER && extractionAttempts === 0) {
+            const ipCheck = await page.goto('https://httpbin.org/ip', { timeout: 15000 }).catch(() => null);
+            if (ipCheck) {
+              const ipData = await page.evaluate(() => document.body.innerText);
+              console.log(`🌐 Browser IP Identity: ${ipData.trim()}`);
+            }
+          }
+
+          // Random jitter before navigation
+          await page.waitForTimeout(Math.random() * 2000 + 1000);
+
+          const response = await page.goto(url, {
+            waitUntil: siteConfig.loadSettings.waitUntil,
+            timeout: siteConfig.loadSettings.timeout,
+          });
+
+          const status = response ? response.status() : 'No Response';
+          const title = await page.title();
+
+          console.log(`📡 [${status}] Page Loaded: "${title}"`);
+
+          // Human-like interaction: Tiny scroll
+          if (status === 200) {
+            await page.evaluate(() => window.scrollBy(0, 500));
+            await page.waitForTimeout(1000);
+          } else {
+            const bodyPeek = await page.evaluate(() => document.body.innerText.slice(0, 200));
+            console.log(`⚠️ Status ${status} body peek: "${bodyPeek.replace(/\n/g, ' ')}"`);
+          }
+
+          // Check for common blocking indicators
+          if (title.toLowerCase().includes('just a moment') || title.toLowerCase().includes('cloudflare') || title.toLowerCase().includes('access denied')) {
+            throw new Error(`Cloudflare/Bot detection detected: ${title}`);
+          }
+
           [images, productInfo, customData] = await Promise.all([
             this.extractImages(page, siteConfig),
             this.extractProductInfo(page, siteConfig),
@@ -219,10 +205,12 @@ class ProductExtractor {
           break; // Success
         } catch (e) {
           extractionAttempts++;
-          // Specific handling for navigation-related context destruction
-          if (e.message.includes('context was destroyed') && extractionAttempts < 3) {
-            console.log(`🔄 Execution context destroyed, retrying extraction (Attempt ${extractionAttempts + 1})...`);
-            await page.waitForTimeout(3000); // Give it more time for Cloudflare/Turnstile reloads
+          console.log(`🔄 Attempt ${extractionAttempts} failed: ${e.message}`);
+
+          if (extractionAttempts < 3) {
+            const waitTime = extractionAttempts * 3000;
+            console.log(`   Waiting ${waitTime}ms and retrying...`);
+            await page.waitForTimeout(waitTime);
           } else {
             throw e;
           }
