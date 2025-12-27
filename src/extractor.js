@@ -60,10 +60,12 @@ class ProductExtractor {
     }
 
     this.browser = await chromium.launch(launchArgs);
+    this.browserVersion = await this.browser.version();
 
     const contextOptions = {
-      ignoreHTTPSErrors: !!proxyServer, // Important for Proxies like Bright Data
+      ignoreHTTPSErrors: false, // Disabling this as it's a footprint
       viewport: { width: 1920, height: 1080 },
+      deviceScaleFactor: 2, // Retina-like scale for Mac
     };
 
     // Force proxy at context level as well
@@ -82,7 +84,7 @@ class ProductExtractor {
     // Stealth plugin handles navigator properties, so manual overrides are removed.
 
     this.isInitialized = true;
-    console.log("✅ Browser initialized");
+    console.log(`✅ Browser initialized (Version: ${this.browserVersion})`);
   }
 
   /**
@@ -172,11 +174,21 @@ class ProductExtractor {
       let images, productInfo, customData;
 
       try {
+        const browserMajorVersion = (this.browserVersion || "133").split('.')[0].replace(/[^0-9]/g, '');
+        const cleanVersion = (this.browserVersion || "133").split('/').pop();
+
         // Fresh context per attempt for total isolation
         currentContext = await this.browser.newContext({
-          ignoreHTTPSErrors: !!process.env.PROXY_SERVER,
+          ignoreHTTPSErrors: false,
           viewport: { width: 1920, height: 1080 },
-          userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+          deviceScaleFactor: 2,
+          userAgent: `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${cleanVersion} Safari/537.36`,
+          extraHTTPHeaders: {
+            'sec-ch-ua': `"Not(A:Brand";v="99", "Google Chrome";v="${browserMajorVersion}", "Chromium";v="${browserMajorVersion}"`,
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"macOS"',
+            'Accept-Language': 'en-US,en;q=0.9',
+          }
         });
 
         currentPage = await currentContext.newPage();
