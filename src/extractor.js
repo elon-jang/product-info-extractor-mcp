@@ -63,7 +63,7 @@ class ProductExtractor {
     this.browserVersion = await this.browser.version();
 
     const contextOptions = {
-      ignoreHTTPSErrors: false, // Disabling this as it's a footprint
+      ignoreHTTPSErrors: true, // Required for many residential proxies that perform SSL inspection
       viewport: { width: 1920, height: 1080 },
       deviceScaleFactor: 2, // Retina-like scale for Mac
     };
@@ -179,7 +179,7 @@ class ProductExtractor {
 
         // Fresh context per attempt for total isolation
         currentContext = await this.browser.newContext({
-          ignoreHTTPSErrors: false,
+          ignoreHTTPSErrors: true,
           viewport: { width: 1920, height: 1080 },
           deviceScaleFactor: 2,
           userAgent: `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${cleanVersion} Safari/537.36`,
@@ -188,6 +188,7 @@ class ProductExtractor {
             'sec-ch-ua-mobile': '?0',
             'sec-ch-ua-platform': '"macOS"',
             'Accept-Language': 'en-US,en;q=0.9',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
           }
         });
 
