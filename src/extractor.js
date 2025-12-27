@@ -188,13 +188,30 @@ class ProductExtractor {
 
       await page.waitForTimeout(siteConfig.loadSettings.waitAfterLoad || 0);
 
-      const [images, productInfo, customData] = await Promise.all([
-        this.extractImages(page, siteConfig),
-        this.extractProductInfo(page, siteConfig),
-        typeof siteConfig.customLogic === "function"
-          ? siteConfig.customLogic(page)
-          : Promise.resolve({ variants: [], sizes: [], current_color: null }),
-      ]);
+      let extractionAttempts = 0;
+      let images, productInfo, customData;
+
+      while (extractionAttempts < 3) {
+        try {
+          [images, productInfo, customData] = await Promise.all([
+            this.extractImages(page, siteConfig),
+            this.extractProductInfo(page, siteConfig),
+            typeof siteConfig.customLogic === "function"
+              ? siteConfig.customLogic(page)
+              : Promise.resolve({ variants: [], sizes: [], current_color: null }),
+          ]);
+          break; // Success
+        } catch (e) {
+          extractionAttempts++;
+          // Specific handling for navigation-related context destruction
+          if (e.message.includes('context was destroyed') && extractionAttempts < 3) {
+            console.log(`🔄 Execution context destroyed, retrying extraction (Attempt ${extractionAttempts + 1})...`);
+            await page.waitForTimeout(3000); // Give it more time for Cloudflare/Turnstile reloads
+          } else {
+            throw e;
+          }
+        }
+      }
 
       // Diagnostic: Log body snippet if name is missing
       if (!productInfo.name) {
