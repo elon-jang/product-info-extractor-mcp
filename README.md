@@ -115,6 +115,31 @@ services:
       start_period: 40s
 ```
 
+**Alternative: Manual Installation (npm)**
+
+If you prefer not to use Docker:
+
+1. **Install Node.js & Playwright Dependencies:**
+```bash
+# Rocky Linux/RHEL
+sudo dnf install -y nodejs npm
+# Install system dependencies for Playwright
+sudo npx playwright install-deps
+```
+
+2. **Install & Start:**
+```bash
+# Install project dependencies
+npm install
+
+# Install Chromium
+npx playwright install chromium
+
+# Start the server (HTTP/SSE mode)
+npm run start:http
+```
+
+
 ### 4. Connect to Claude
 To use this server with Claude Desktop, use `npx -y mcp-remote` to bridge the connection. Add this to your configuration file (e.g., `~/Library/Application Support/Claude/claude_desktop_config.json`):
 
