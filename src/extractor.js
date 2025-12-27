@@ -38,11 +38,8 @@ class ProductExtractor {
     const launchArgs = {
       headless: true,
       args: [
-        "--disable-blink-features=AutomationControlled",
         "--disable-dev-shm-usage",
         "--no-sandbox",
-        "--disable-web-security",
-        "--disable-features=IsolateOrigins,site-per-process",
         "--disable-setuid-sandbox",
       ],
     };
@@ -63,9 +60,7 @@ class ProductExtractor {
     this.context = await this.browser.newContext({
       ignoreHTTPSErrors: !!proxyServer, // Important for Proxies like Bright Data
       viewport: { width: 1920, height: 1080 },
-      locale: "en-US",
-      permissions: ['geolocation'],
-      geolocation: { latitude: 37.7749, longitude: -122.4194 }, // San Francisco
+      // locale & geolocation removed to avoid mismatch with Proxy IP location
     });
 
     // Stealth plugin handles navigator properties, so manual overrides are removed.
@@ -181,18 +176,20 @@ class ProductExtractor {
 
           console.log(`📡 [${status}] Page Loaded: "${title}"`);
 
-          // Human-like interaction: Tiny scroll
-          if (status === 200) {
-            await page.evaluate(() => window.scrollBy(0, 500));
-            await page.waitForTimeout(1000);
-          } else {
+          // Handle blocking
+          if (status === 403 || title.toLowerCase().includes('just a moment') || title.toLowerCase().includes('cloudflare') || title.toLowerCase().includes('access denied')) {
             const bodyPeek = await page.evaluate(() => document.body.innerText.slice(0, 200));
-            console.log(`⚠️ Status ${status} body peek: "${bodyPeek.replace(/\n/g, ' ')}"`);
+            console.log(`⚠️ Blocked (Status ${status}). Title: "${title}". Body snippet: "${bodyPeek.replace(/\n/g, ' ')}"`);
+            throw new Error(`Cloudflare/Firewall Blocked (Status ${status})`);
           }
 
-          // Check for common blocking indicators
-          if (title.toLowerCase().includes('just a moment') || title.toLowerCase().includes('cloudflare') || title.toLowerCase().includes('access denied')) {
-            throw new Error(`Cloudflare/Bot detection detected: ${title}`);
+          // Human-like interaction: Scroll
+          await page.evaluate(() => window.scrollBy(0, 300));
+          await page.waitForTimeout(500);
+
+          // Wait for a core element (UGG specific or generic)
+          if (url.includes('ugg.com')) {
+            await page.waitForSelector('h1, .product-detail', { timeout: 10000 }).catch(() => null);
           }
 
           [images, productInfo, customData] = await Promise.all([
@@ -202,6 +199,11 @@ class ProductExtractor {
               ? siteConfig.customLogic(page)
               : Promise.resolve({ variants: [], sizes: [], current_color: null }),
           ]);
+
+          if (!productInfo.name && extractionAttempts < 2) {
+            throw new Error('Extraction failed (empty content)');
+          }
+
           break; // Success
         } catch (e) {
           extractionAttempts++;
