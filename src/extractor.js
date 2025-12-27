@@ -45,23 +45,39 @@ class ProductExtractor {
     };
 
     if (proxyServer) {
-      console.log(`🌐 Using Proxy Server: ${proxyServer}`);
-      launchArgs.proxy = {
+      const redactedUser = proxyUsername ? `${proxyUsername.substring(0, 8)}...` : 'not set';
+      console.log(`🌐 Using Proxy Server: ${proxyServer} (User: ${redactedUser})`);
+
+      const proxyConfig = {
         server: proxyServer,
       };
       if (proxyUsername && proxyPassword) {
-        launchArgs.proxy.username = proxyUsername;
-        launchArgs.proxy.password = proxyPassword;
+        proxyConfig.username = proxyUsername;
+        proxyConfig.password = proxyPassword;
       }
+
+      launchArgs.proxy = proxyConfig;
     }
 
     this.browser = await chromium.launch(launchArgs);
 
-    this.context = await this.browser.newContext({
+    const contextOptions = {
       ignoreHTTPSErrors: !!proxyServer, // Important for Proxies like Bright Data
       viewport: { width: 1920, height: 1080 },
-      // locale & geolocation removed to avoid mismatch with Proxy IP location
-    });
+    };
+
+    // Force proxy at context level as well
+    if (proxyServer) {
+      contextOptions.proxy = {
+        server: proxyServer,
+      };
+      if (proxyUsername && proxyPassword) {
+        contextOptions.proxy.username = proxyUsername;
+        contextOptions.proxy.password = proxyPassword;
+      }
+    }
+
+    this.context = await this.browser.newContext(contextOptions);
 
     // Stealth plugin handles navigator properties, so manual overrides are removed.
 
@@ -148,6 +164,14 @@ class ProductExtractor {
     const siteConfig = await this.loadSiteConfig(url);
     const page = await this.context.newPage();
 
+    // Catch network/proxy failures
+    page.on('requestfailed', request => {
+      const failure = request.failure();
+      if (failure && (failure.errorText.includes('ERR_PROXY') || failure.errorText.includes('ERR_TUNNEL'))) {
+        console.error(`❌ Network/Proxy failure for ${request.url()}: ${failure.errorText}`);
+      }
+    });
+
     try {
       let extractionAttempts = 0;
       let images, productInfo, customData;
@@ -156,10 +180,14 @@ class ProductExtractor {
         try {
           // Diagnostic: Check current IP if proxy is enabled
           if (process.env.PROXY_SERVER && extractionAttempts === 0) {
-            const ipCheck = await page.goto('https://httpbin.org/ip', { timeout: 15000 }).catch(() => null);
-            if (ipCheck) {
-              const ipData = await page.evaluate(() => document.body.innerText);
-              console.log(`🌐 Browser IP Identity: ${ipData.trim()}`);
+            try {
+              const ipCheck = await page.goto('https://httpbin.org/ip', { timeout: 15000 });
+              if (ipCheck) {
+                const ipData = await page.evaluate(() => document.body.innerText);
+                console.log(`🌐 Browser IP Identity: ${ipData.trim()}`);
+              }
+            } catch (ipError) {
+              console.warn(`⚠️ IP check failed: ${ipError.message}`);
             }
           }
 
@@ -210,7 +238,7 @@ class ProductExtractor {
           console.log(`🔄 Attempt ${extractionAttempts} failed: ${e.message}`);
 
           if (extractionAttempts < 3) {
-            const waitTime = extractionAttempts * 3000;
+            const waitTime = extractionAttempts * 5000;
             console.log(`   Waiting ${waitTime}ms and retrying...`);
             await page.waitForTimeout(waitTime);
           } else {
