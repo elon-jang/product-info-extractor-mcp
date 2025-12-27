@@ -52,32 +52,16 @@ Get a fresh Rocky Linux/RHEL VM (e.g., AWS EC2, GCP Compute Engine, Tencent Clou
 
 ### 2. Install Docker
 ```bash
-sudo dnf install -y yum-utils
-sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+# Update and install Docker (Rocky Linux/RHEL)
+sudo dnf update -y
+sudo dnf install -y docker docker-compose
 sudo systemctl start docker
 sudo systemctl enable docker
 sudo usermod -aG docker $USER
 newgrp docker
 ```
 
-### 3. Building the Image (Multi-platform)
-
-If you need to build and push the image yourself (e.g., for different architectures like `amd64` on a Mac `arm64`), use `docker buildx`:
-
-```bash
-# 1. Create and use a new builder (first time only)
-docker buildx create --use --name mybuilder
-
-# 2. Build for multiple platforms and push to Docker Hub
-docker buildx build --platform linux/amd64,linux/arm64 \
-  -t joomanba/product-info-extractor-mcp:latest --push .
-```
-
-> [!NOTE]
-> This ensures the image runs on both Apple Silicon (Mac) and Intel/AMD server CPUs (TencentOS, EC2, etc.).
-
-### 4. Run the Extractor
+### 3. Run the Extractor
 ```bash
 docker run -d \
   --restart always \
