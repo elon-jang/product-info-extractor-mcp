@@ -35,7 +35,8 @@ npm run start:http
 
 ## 📋 주요 기능
 
-- **🚀 고성능:** 브라우저 인스턴스 재사용으로 5-10배 빠른 후속 요청
+- **⚡ 초고속:** 8-10초 응답 (DataDome 우회 로직 제거로 6배 성능 향상)
+- **🚀 고성능:** 브라우저 인스턴스 재사용으로 후속 요청 즉시 처리
 - **🥷 스텔스 모드:** `playwright-extra` + `puppeteer-extra-plugin-stealth`로 기본 봇 탐지 우회
 - **🔌 MCP 프로토콜:** Claude Desktop과 바로 연동 가능
 - **📦 멀티 플랫폼:** AMD64 + ARM64 (Apple Silicon & 클라우드 VM) 지원

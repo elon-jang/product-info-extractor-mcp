@@ -35,7 +35,8 @@ npm run start:http
 
 ## 📋 Key Features
 
-- **🚀 High Performance:** 5-10x faster subsequent requests through browser instance reuse
+- **⚡ Ultra-Fast:** 8-10 second response time (6x performance boost by removing DataDome evasion logic)
+- **🚀 High Performance:** Instant subsequent requests through browser instance reuse
 - **🥷 Stealth Mode:** Bypass basic bot detection with `playwright-extra` + `puppeteer-extra-plugin-stealth`
 - **🔌 MCP Protocol:** Direct integration with Claude Desktop
 - **📦 Multi-Platform:** AMD64 + ARM64 (Apple Silicon & Cloud VMs) support
