@@ -136,7 +136,7 @@ class ProductExtractor {
     let extractionAttempts = 0;
     let finalResult = null;
 
-    while (extractionAttempts < 3) {
+    while (extractionAttempts < 2) {
       let currentContext = null;
       let currentPage = null;
       let images, productInfo, customData;
@@ -173,63 +173,23 @@ class ProductExtractor {
 
         currentPage = await currentContext.newPage();
 
-        // Random jitter before navigation to mimic human lead time
-        await currentPage.waitForTimeout(Math.random() * 3000 + 2000);
-
+        // Fast navigation - just load the page
         const response = await currentPage.goto(url, {
-          waitUntil: 'networkidle', // Try to wait for full script execution
-          timeout: 45000,
-        }).catch(async () => {
-          console.log("⚠️ Networkidle timeout, continuing with current state...");
-          return null;
+          waitUntil: 'domcontentloaded', // Wait for DOM only, not all resources
+          timeout: 15000,
         });
 
-        // "Observational" wait - let DataDome/Cloudflare scripts run/resolve
-        await currentPage.waitForTimeout(5000);
-
-        // Simulated mouse movement to trigger behavioral scripts
-        try {
-          await this.moveMouseSmoothly(currentPage);
-        } catch (mE) { /* Ignored */ }
-
-        const cookies = await currentContext.cookies();
-        const hasDataDomeCookie = cookies.some(c => c.name.toLowerCase().includes('datadome'));
-        if (hasDataDomeCookie) console.log("🍪 DataDome cookie detected");
+        // Short wait for page rendering
+        await currentPage.waitForTimeout(500);
 
         let status = response ? response.status() : 'No Response';
         let title = await currentPage.title();
 
         console.log(`📡 [Attempt ${extractionAttempts + 1}] [${status}] Page Loaded: "${title}"`);
 
-        // Handle blocking (403 or Cloudflare titles)
-        if (status === 403 || title.toLowerCase().includes('just a moment') || title.toLowerCase().includes('cloudflare') || title.toLowerCase().includes('access denied')) {
-          const htmlCapture = await currentPage.content().then(html => html.slice(0, 1000));
-          console.log(`⚠️ Blocked (Status ${status}). Title: "${title}".`);
-          console.log(`📄 HTML Snippet: "${htmlCapture.replace(/\n/g, ' ')}"`);
-          throw new Error(`Cloudflare/Firewall Blocked (Status ${status})`);
-        }
-
-        // Human-like interaction: Multi-step Scroll (mimic a person reading/scanning)
-        await currentPage.evaluate(() => {
-          return new Promise(resolve => {
-            let totalHeight = 0;
-            const distance = 100;
-            const timer = setInterval(() => {
-              const scrollHeight = document.body.scrollHeight;
-              window.scrollBy(0, distance);
-              totalHeight += distance;
-              if (totalHeight >= 600 || totalHeight >= scrollHeight) {
-                clearInterval(timer);
-                resolve();
-              }
-            }, 150);
-          });
-        });
-        await currentPage.waitForTimeout(1500);
-
-        // Wait for a core element (UGG specific or generic)
-        if (url.includes('ugg.com')) {
-          await currentPage.waitForSelector('h1, .product-detail', { timeout: 10000 }).catch(() => null);
+        // Only check for critical blocking
+        if (status === 403 || status === 429) {
+          throw new Error(`Blocked (Status ${status})`);
         }
 
         [images, productInfo, customData] = await Promise.all([
@@ -282,9 +242,9 @@ class ProductExtractor {
         extractionAttempts++;
         console.log(`🔄 Attempt ${extractionAttempts} failed: ${e.message}`);
 
-        if (extractionAttempts < 3) {
-          const waitTime = extractionAttempts * 5000;
-          console.log(`   Waiting ${waitTime}ms and retrying with fresh context...`);
+        if (extractionAttempts < 2) {
+          const waitTime = 1000; // Quick 1 second retry
+          console.log(`   Retrying in ${waitTime}ms...`);
           await new Promise(r => setTimeout(r, waitTime));
         } else {
           throw e;
@@ -550,21 +510,6 @@ class ProductExtractor {
   /**
    * Smooth mouse movement to mimic human behavior
    */
-  async moveMouseSmoothly(page) {
-    const steps = 15;
-    const startX = Math.random() * 100;
-    const startY = Math.random() * 100;
-    const endX = Math.random() * 800 + 100;
-    const endY = Math.random() * 600 + 100;
-
-    for (let i = 0; i <= steps; i++) {
-      const x = startX + (endX - startX) * (i / steps);
-      const y = startY + (endY - startY) * (i / steps);
-      await page.mouse.move(x, y).catch(() => null);
-      await page.waitForTimeout(Math.random() * 50 + 20);
-    }
-  }
-
   async close() {
     if (this.browser) {
       console.log("🔌 Closing browser...");
